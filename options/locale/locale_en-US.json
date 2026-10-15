@@ -2688,6 +2688,7 @@
   "repo.release.tag_already_exist": "This tag name already exists.",
   "repo.release.downloads": "Downloads",
   "repo.release.download_count": "Downloads: %s",
+  "repo.release.filter_attachments": "Filter by attachment name…",
   "repo.release.add_tag_msg": "Use the title and content of release as tag message.",
   "repo.release.add_tag": "Create Tag Only",
   "repo.release.releases_for": "Releases for %s",

@@ -4,6 +4,11 @@
 	<div class="ui container">
 		{{template "base/alert" .}}
 		{{template "repo/release_tag_header" .}}
+		{{if not .PageIsSingleTag}}
+			<form class="ignore-dirty tw-mb-4" method="get">
+				{{template "shared/search/combo" dict "Value" .Keyword "Placeholder" (ctx.Locale.Tr "repo.release.filter_attachments") "Tooltip" (ctx.Locale.Tr "repo.release.filter_attachments")}}
+			</form>
+		{{end}}
 		<ul id="release-list">
 			{{range $idx, $info := .Releases}}
 				{{$release := $info.Release}}
@@ -111,6 +116,9 @@
 				</li>
 			{{end}}
 		</ul>
+		{{if and .Keyword (not .Releases)}}
+			<p class="tw-p-4">{{ctx.Locale.Tr "no_results_found"}}</p>
+		{{end}}
 
 		{{template "base/paginate" .}}
 	</div>

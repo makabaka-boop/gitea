@@ -78,6 +78,49 @@ func TestViewReleasesNoLogin(t *testing.T) {
 	MakeRequest(t, req, http.StatusOK)
 }
 
+func TestViewReleasesAttachmentFilter(t *testing.T) {
+	defer tests.PrepareTestEnv(t)()
+
+	// repo1: v1.1 ships "attach1", the draft release ships "draft-attach"
+	t.Run("writer sees drafts", func(t *testing.T) {
+		session := loginUser(t, "user1")
+
+		req := NewRequest(t, "GET", "/user2/repo1/releases?q=attach")
+		resp := session.MakeRequest(t, req, http.StatusOK)
+		htmlDoc := NewHTMLParser(t, resp.Body)
+
+		entries := htmlDoc.doc.Find("#release-list > li.release-entry")
+		assert.Equal(t, 2, entries.Length(), "every release is listed once even with multiple matching attachments")
+		titles := entries.Map(func(_ int, s *goquery.Selection) string {
+			return s.Find(".release-list-title a").Text()
+		})
+		assert.ElementsMatch(t, []string{"testing-release", "draft-release"}, titles)
+		assert.Equal(t, "attach", htmlDoc.doc.Find("form input[name='q']").AttrOr("value", ""))
+		assert.Contains(t, htmlDoc.doc.Find(".attachment-list").Text(), "attach1", "matched releases keep their full attachment list")
+
+		req = NewRequest(t, "GET", "/user2/repo1/releases?q=DRAFT-ATTACH")
+		resp = session.MakeRequest(t, req, http.StatusOK)
+		assert.Equal(t, 1, NewHTMLParser(t, resp.Body).doc.Find("#release-list > li.release-entry").Length(), "filter is case-insensitive")
+
+		req = NewRequest(t, "GET", "/user2/repo1/releases?q=no-such-attachment")
+		resp = session.MakeRequest(t, req, http.StatusOK)
+		htmlDoc = NewHTMLParser(t, resp.Body)
+		assert.Equal(t, 0, htmlDoc.doc.Find("#release-list > li.release-entry").Length())
+		assert.Contains(t, htmlDoc.doc.Find("#release-list + p").Text(), "No results found")
+	})
+
+	t.Run("anonymous does not see drafts", func(t *testing.T) {
+		req := NewRequest(t, "GET", "/user2/repo1/releases?q=attach")
+		resp := MakeRequest(t, req, http.StatusOK)
+		assert.Equal(t, 1, NewHTMLParser(t, resp.Body).doc.Find("#release-list > li.release-entry").Length())
+
+		// blank filter restores the unfiltered list
+		req = NewRequest(t, "GET", "/user2/repo1/releases?q=%20%20")
+		resp = MakeRequest(t, req, http.StatusOK)
+		assert.Equal(t, 2, NewHTMLParser(t, resp.Body).doc.Find("#release-list > li.release-entry").Length())
+	})
+}
+
 func TestCreateRelease(t *testing.T) {
 	defer tests.PrepareTestEnv(t)()
 

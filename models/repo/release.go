@@ -259,15 +259,16 @@ func GetReleaseForRepoByID(ctx context.Context, repoID, id int64) (*Release, err
 // FindReleasesOptions describes the conditions to Find releases
 type FindReleasesOptions struct {
 	db.ListOptions
-	RepoID        int64
-	IncludeDrafts bool
-	IncludeTags   bool
-	IsPreRelease  optional.Option[bool]
-	IsDraft       optional.Option[bool]
-	TagNames      []string
-	HasSha1       optional.Option[bool] // useful to find draft releases which are created with existing tags
-	NamePattern   optional.Option[string]
-	TagFilter     string
+	RepoID                int64
+	IncludeDrafts         bool
+	IncludeTags           bool
+	IsPreRelease          optional.Option[bool]
+	IsDraft               optional.Option[bool]
+	TagNames              []string
+	HasSha1               optional.Option[bool] // useful to find draft releases which are created with existing tags
+	NamePattern           optional.Option[string]
+	TagFilter             string
+	AttachmentNamePattern optional.Option[string]
 }
 
 func (opts FindReleasesOptions) ToConds() builder.Cond {
@@ -306,6 +307,16 @@ func (opts FindReleasesOptions) ToConds() builder.Cond {
 		pattern = strings.ReplaceAll(pattern, "%", "\\%")
 		pattern = strings.ReplaceAll(pattern, "*", "%")
 		cond = cond.And(builder.Like{"lower_tag_name", pattern})
+	}
+	if opts.AttachmentNamePattern.Has() && opts.AttachmentNamePattern.Value() != "" {
+		// keep the keyword a plain substring: escape LIKE wildcards instead of interpreting them
+		pattern := opts.AttachmentNamePattern.Value()
+		for _, ch := range []string{"\\", "%", "_"} {
+			pattern = strings.ReplaceAll(pattern, ch, "\\"+ch)
+		}
+		cond = cond.And(builder.In("id", builder.Select("release_id").From("attachment").Where(
+			builder.Gt{"release_id": 0}.And(db.BuildCaseInsensitiveLike("name", pattern)),
+		)))
 	}
 	return cond
 }

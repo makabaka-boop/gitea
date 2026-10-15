@@ -173,12 +173,16 @@ func Releases(ctx *context.Context) {
 	writeAccess := ctx.Repo.Permission.CanWrite(unit.TypeReleases)
 	ctx.Data["CanCreateRelease"] = writeAccess && !ctx.Repo.Repository.IsArchived
 
-	releases, err := getReleaseInfos(ctx, &repo_model.FindReleasesOptions{
+	attachmentKeyword := ctx.FormTrim("q")
+	findReleasesOpts := &repo_model.FindReleasesOptions{
 		ListOptions: listOptions,
 		// only show draft releases for users who can write, read-only users shouldn't see draft releases.
-		IncludeDrafts: writeAccess,
-		RepoID:        ctx.Repo.Repository.ID,
-	})
+		IncludeDrafts:         writeAccess,
+		RepoID:                ctx.Repo.Repository.ID,
+		AttachmentNamePattern: optional.Some(attachmentKeyword),
+	}
+
+	releases, err := getReleaseInfos(ctx, findReleasesOpts)
 	if err != nil {
 		ctx.ServerError("getReleaseInfos", err)
 		return
@@ -190,8 +194,17 @@ func Releases(ctx *context.Context) {
 	}
 
 	ctx.Data["Releases"] = releases
+	ctx.Data["Keyword"] = attachmentKeyword
 
+	// NumReleases is the unfiltered total used for the releases tab, the pager needs the filtered count.
 	numReleases := ctx.Data["NumReleases"].(int64) //nolint:forcetypeassert // must exist
+	if attachmentKeyword != "" {
+		numReleases, err = db.Count[repo_model.Release](ctx, findReleasesOpts)
+		if err != nil {
+			ctx.ServerError("CountReleases", err)
+			return
+		}
+	}
 	pager := context.NewPagerBuilder(ctx).TotalCount(numReleases).PerPageLimit(listOptions.PageSize).CurPage(listOptions.Page).Build()
 	ctx.Data["Page"] = pager
 	ctx.HTML(http.StatusOK, tplReleasesList)

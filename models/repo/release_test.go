@@ -8,6 +8,7 @@ import (
 
 	"gitea.dev/models/db"
 	"gitea.dev/models/unittest"
+	"gitea.dev/modules/optional"
 	"gitea.dev/modules/util"
 
 	"github.com/stretchr/testify/assert"
@@ -38,6 +39,49 @@ func Test_FindTagsByCommitIDs(t *testing.T) {
 	assert.Equal(t, "v1.1", rels[0].TagName)
 	assert.Equal(t, "delete-tag", rels[1].TagName)
 	assert.Equal(t, "v1.0", rels[2].TagName)
+}
+
+func TestFindReleasesAttachmentNamePattern(t *testing.T) {
+	assert.NoError(t, unittest.PrepareTestDatabase())
+
+	// repo 1: release 1 has "attach1", draft release 4 has "draft-attach"
+	find := func(pattern string, includeDrafts bool) []*Release {
+		rels, err := db.Find[Release](t.Context(), FindReleasesOptions{
+			ListOptions:           db.ListOptionsAll,
+			RepoID:                1,
+			IncludeDrafts:         includeDrafts,
+			AttachmentNamePattern: optional.Some(pattern),
+		})
+		assert.NoError(t, err)
+		return rels
+	}
+
+	rels := find("ATTACH", true)
+	assert.Len(t, rels, 2, "case-insensitive substring match")
+	assert.ElementsMatch(t, []int64{1, 4}, []int64{rels[0].ID, rels[1].ID})
+
+	assert.Empty(t, find("draft-attach", false), "draft visibility is still controlled by IncludeDrafts")
+	assert.Empty(t, find("readme", true), "attachments of other repos must not match")
+	assert.Empty(t, find("%", true), "LIKE wildcards must be treated as literal text")
+
+	// two matching attachments on one release must return the release only once
+	assert.NoError(t, db.Insert(t.Context(), &Attachment{
+		UUID:      "a0eebc99-9c0c-4ef7-bb6e-6bb9bd380a99",
+		RepoID:    1,
+		ReleaseID: 1,
+		Name:      "second-attach.zip",
+	}))
+	rels = find("attach", true)
+	assert.Len(t, rels, 2)
+	assert.ElementsMatch(t, []int64{1, 4}, []int64{rels[0].ID, rels[1].ID})
+
+	count, err := db.Count[Release](t.Context(), FindReleasesOptions{
+		RepoID:                1,
+		IncludeDrafts:         true,
+		AttachmentNamePattern: optional.Some("attach"),
+	})
+	assert.NoError(t, err)
+	assert.EqualValues(t, 2, count, "count must match the filtered releases for paging")
 }
 
 func TestAddReleaseAttachmentsRejectsDifferentRepo(t *testing.T) {
